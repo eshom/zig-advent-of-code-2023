@@ -164,6 +164,7 @@ const Part = struct {
     }
 
     fn symbolAdj(self: *const Part) bool {
+        defer debug.print("\n", .{});
         for (self.indice) |ind| {
             const row, const col = self.schema.toMatIdx(ind);
 
@@ -178,11 +179,15 @@ const Part = struct {
                 self.schema.get(row + 1, col + 1) catch '.', // downright
             };
 
+            debug.print("Pos: [{d:<3}][{d:<3}]{c:<3}Neighbors: ", .{ row, col, ' ' });
             for (neighbors) |neig| {
+                debug.print(" {c}", .{neig});
                 if (neig != '.' and !ascii.isDigit(neig)) {
+                    debug.print("\n", .{});
                     return true;
                 }
             }
+            debug.print("\n", .{});
         }
         return false;
     }
@@ -381,4 +386,47 @@ pub fn part1(input: []const u8) !u64 {
     }
 
     return sum;
+}
+
+test "part 1 example synthetic" {
+    debug.print("\n", .{});
+    const input =
+        \\....$..........$....$...........
+        \\.1..1.1.$1..1$..1..1..1..1......
+        \\......$..............$....$.....
+        \\..%..............%.....%........
+        \\.10..10.%10..10%.10..10..10..10.
+        \\......%.................%......%
+        \\...*..................*......*..
+        \\.100..100.*100..100*.100..100...
+        \\........*.......................
+        \\................................
+        \\.100..100.......................
+        \\..*......*......................
+        \\................................
+        \\.1.1-1.1.1.1.1.1.1.1.1.1.1.1.1.1
+        \\................................
+        \\100.100.100.100-100.100.100.100.
+        \\................................
+        \\.1..............................
+        \\111.............................
+        \\.1..............................
+        \\................................
+        \\................................
+        \\................................
+    ;
+
+    var schem = try Schematic.init(t.allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(t.allocator);
+
+    const expected: u64 = 1090;
+
+    var sum: u64 = 0;
+    for (schem.parts.?) |part| {
+        sum += if (part.symbolAdj()) part.part else 0;
+    }
+
+    try t.expectEqual(expected, sum);
 }
