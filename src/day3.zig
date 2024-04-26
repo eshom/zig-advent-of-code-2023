@@ -45,9 +45,9 @@ const Schematic = struct {
     }
 
     fn initParts(self: *Schematic, allocator: mem.Allocator) !void {
-        const part_count = Part.countPartsFromString(self.layout);
+        const part_count = Part.countPartsFromString(self);
 
-        var partit = PartNumIterator{ .input = self.layout };
+        var partit = PartNumIterator{ .input = self.layout, .schema = self };
 
         const parts = try allocator.alloc(Part, part_count);
         var init_count: usize = 0;
@@ -70,6 +70,10 @@ const Schematic = struct {
             part.schema = self;
             part.part = num;
             part.indice = seq;
+        }
+
+        if (try partit.next()) |val| {
+            log.err("Got unexpected extra part number: {d}\n", .{val.@"0"});
         }
 
         assert(init_count == parts.len);
@@ -111,36 +115,46 @@ const Schematic = struct {
 };
 
 const PartNumIterator = struct {
+    schema: *const Schematic,
     input: []const u8,
     index: usize = 0,
 
     // returns the number, start index, end index
     fn next(self: *PartNumIterator) !?struct { u64, usize, usize } {
         var start: usize = self.index;
-        var end: usize = self.input.len;
 
-        if (start >= end) return null;
+        if (start >= self.input.len) return null;
 
         start = mem.indexOfAnyPos(u8, self.input, start, "0123456789") orelse {
             self.index = self.input.len;
             return null;
         };
 
-        var idx = start;
-        while (ascii.isDigit(self.input[idx])) : (idx += 1) {
-            if (idx == self.input.len - 1 and ascii.isDigit(self.input[idx])) {
-                break;
-            } else {
-                continue;
-            }
-            unreachable;
-        }
+        // get start row and column to detect wrap around
+        const start_row, const start_col = self.schema.toMatIdx(start);
+        _ = start_col;
 
-        assert(idx < self.input.len);
-        end = if (idx == self.input.len - 1) idx + 1 else idx;
+        // There are no part numbers with more than 3 digits
+        var end: usize = start;
+        var loop_local_end: usize = end;
+        for (0..3) |_| {
+            defer end = loop_local_end;
+            loop_local_end = end + 1;
+            const row, _ = self.schema.toMatIdx(loop_local_end);
+
+            if (loop_local_end >= self.input.len) break;
+            if (start_row != row) break; // wrap around
+
+            if (!ascii.isDigit(self.input[loop_local_end])) {
+                break;
+            }
+        }
+        assert(end <= self.input.len);
         self.index = end;
 
-        return .{ try fmt.parseInt(u64, self.input[start..end], 10), start, end };
+        const final = self.input[start..end];
+
+        return .{ try fmt.parseInt(u64, final, 10), start, end };
     }
 };
 
@@ -149,22 +163,29 @@ const Part = struct {
     part: u64,
     indice: []usize, // 1D indice of part
 
-    fn countPartsFromString(input: []const u8) usize {
+    fn countPartsFromString(schem: *const Schematic) usize {
+        const input = schem.layout;
         var out: usize = 0;
 
-        var peek: u8 = 0;
-        for (input, 0..) |chr, idx| {
-            peek = if (idx >= input.len - 1) 0 else input[idx + 1];
-            if (ascii.isDigit(chr) and !ascii.isDigit(peek)) {
+        var idx: usize = 0;
+        // var prev_row: usize = 0;
+        // var row, _ = schem.toMatIdx(idx);
+        while (idx < input.len) : (idx += 1) {
+            // prev_row = row;
+            if (ascii.isDigit(input[idx])) {
                 out += 1;
+
+                while (idx < input.len and ascii.isDigit(input[idx])) : (idx += 1) {
+                    // make sure not to skip numbers that start new rows
+                    _, const col = schem.toMatIdx(idx);
+                    if (col >= schem.ncol - 1) break;
+                }
             }
         }
-
         return out;
     }
 
     fn symbolAdj(self: *const Part) bool {
-        defer debug.print("\n", .{});
         for (self.indice) |ind| {
             const row, const col = self.schema.toMatIdx(ind);
 
@@ -179,15 +200,11 @@ const Part = struct {
                 self.schema.get(row + 1, col + 1) catch '.', // downright
             };
 
-            debug.print("Pos: [{d:<3}][{d:<3}]{c:<3}Neighbors: ", .{ row, col, ' ' });
             for (neighbors) |neig| {
-                debug.print(" {c}", .{neig});
                 if (neig != '.' and !ascii.isDigit(neig)) {
-                    debug.print("\n", .{});
                     return true;
                 }
             }
-            debug.print("\n", .{});
         }
         return false;
     }
@@ -218,6 +235,8 @@ test "parse schematic" {
         \\.664.598..
     ;
 
+    errdefer debug.print("\n{s}\n\n", .{input});
+
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
 
@@ -244,6 +263,8 @@ test "parse schematic newline" {
         \\
     ;
 
+    errdefer debug.print("\n{s}\n\n", .{input});
+
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
 
@@ -266,6 +287,8 @@ test "get values schematic unbalanced" {
         \\...$.*....
         \\.664.598..
     ;
+
+    errdefer debug.print("\n{s}\n\n", .{input});
 
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
@@ -298,6 +321,8 @@ test "indice conversions" {
         \\.664.598..
     ;
 
+    errdefer debug.print("\n{s}\n\n", .{input});
+
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
 
@@ -320,6 +345,8 @@ test "parsing parts minimal" {
         \\...*...420
     ;
 
+    errdefer debug.print("\n{s}\n\n", .{input});
+
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
 
@@ -331,6 +358,40 @@ test "parsing parts minimal" {
         .{ 5, 6, 7 },
         .{ 17, 18, 19 },
     };
+
+    for (expected_nums, 0..) |expected, idx| {
+        try t.expectEqual(expected, schem.parts.?[idx].part);
+    }
+
+    for (expected_indice, 0..) |expected, idx| {
+        try t.expectEqualSlices(usize, &expected, schem.parts.?[idx].indice);
+    }
+}
+
+test "parsing parts minimal2" {
+    debug.print("\n", .{});
+    const input =
+        \\467..114..
+        \\...*...420
+        \\776.......
+    ;
+
+    errdefer debug.print("\n{s}\n\n", .{input});
+
+    var schem = try Schematic.init(t.allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(t.allocator);
+
+    const expected_nums = [_]u64{ 467, 114, 420, 776 };
+    const expected_indice = [_][3]usize{
+        .{ 0, 1, 2 },
+        .{ 5, 6, 7 },
+        .{ 17, 18, 19 },
+        .{ 20, 21, 22 },
+    };
+
+    try t.expectEqual(4, schem.parts.?.len);
 
     for (expected_nums, 0..) |expected, idx| {
         try t.expectEqual(expected, schem.parts.?[idx].part);
@@ -355,6 +416,8 @@ test "full part 1 example" {
         \\...$.*....
         \\.664.598..
     ;
+
+    errdefer debug.print("\n{s}\n\n", .{input});
 
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
@@ -388,40 +451,20 @@ pub fn part1(input: []const u8) !u64 {
     return sum;
 }
 
-test "part 1 example synthetic" {
+test "should not wrap" {
     debug.print("\n", .{});
     const input =
-        \\....$..........$....$...........
-        \\.1..1.1.$1..1$..1..1..1..1......
-        \\......$..............$....$.....
-        \\..%..............%.....%........
-        \\.10..10.%10..10%.10..10..10..10.
-        \\......%.................%......%
-        \\...*..................*......*..
-        \\.100..100.*100..100*.100..100...
-        \\........*.......................
-        \\................................
-        \\.100..100.......................
-        \\..*......*......................
-        \\................................
-        \\.1.1-1.1.1.1.1.1.1.1.1.1.1.1.1.1
-        \\................................
-        \\100.100.100.100-100.100.100.100.
-        \\................................
-        \\.1..............................
-        \\111.............................
-        \\.1..............................
-        \\................................
-        \\................................
-        \\................................
+        \\.........*1
+        \\0..........
     ;
+    errdefer debug.print("\n{s}\n\n", .{input});
 
     var schem = try Schematic.init(t.allocator, input);
     defer schem.deinit();
 
     try schem.initParts(t.allocator);
 
-    const expected: u64 = 1090;
+    const expected: u64 = 1;
 
     var sum: u64 = 0;
     for (schem.parts.?) |part| {
@@ -429,4 +472,37 @@ test "part 1 example synthetic" {
     }
 
     try t.expectEqual(expected, sum);
+}
+
+test "try to detect more edge cases making me fail day 3" {
+    debug.print("\n", .{});
+    const input =
+        \\1.2.3.33.4
+        \\22..55*...
+        \\..........
+        \\9.........
+        \\8.........
+        \\777.......
+        \\..........
+        \\..........
+        \\..........
+        \\..........
+    ;
+    errdefer debug.print("\n{s}\n\n", .{input});
+
+    var schem = try Schematic.init(t.allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(t.allocator);
+
+    const expected = [_]u64{ 1, 2, 3, 33, 4, 22, 55, 9, 8, 777 };
+
+    const actual = try t.allocator.alloc(u64, schem.parts.?.len);
+    defer t.allocator.free(actual);
+
+    for (actual, 0..) |*act, idx| {
+        act.* = schem.parts.?[idx].part;
+    }
+
+    try t.expectEqualSlices(u64, &expected, actual);
 }
