@@ -9,6 +9,17 @@ const log = std.log;
 const ascii = std.ascii;
 const math = std.math;
 
+const Neighbors = struct {
+    up: ?usize,
+    down: ?usize,
+    left: ?usize,
+    right: ?usize,
+    upleft: ?usize,
+    upright: ?usize,
+    downleft: ?usize,
+    downright: ?usize,
+};
+
 const Schematic = struct {
     allocator: mem.Allocator,
     nrow: usize,
@@ -102,6 +113,23 @@ const Schematic = struct {
         }
 
         return self.layout[row * self.ncol + col];
+    }
+
+    fn neighborInd(self: *const Schematic, row: usize, col: usize) Neighbors {
+        const up: ?usize = math.sub(usize, row, 1) catch null;
+        const left: ?usize = math.sub(usize, col, 1) catch null;
+        const right: ?usize = if (col + 1 >= self.ncol) null else col + 1;
+        const down: ?usize = if (row + 1 >= self.nrow) null else row + 1;
+        return .{
+            .up = if (up) |val| self.toFlatIdx(val, col) else null,
+            .down = if (down) |val| self.toFlatIdx(val, col) else null,
+            .left = if (left) |val| self.toFlatIdx(row, val) else null,
+            .right = if (right) |val| self.toFlatIdx(row, val) else null,
+            .upleft = if (up != null and left != null) self.toFlatIdx(up.?, left.?) else null,
+            .upright = if (up != null and right != null) self.toFlatIdx(up.?, right.?) else null,
+            .downleft = if (down != null and left != null) self.toFlatIdx(down.?, left.?) else null,
+            .downright = if (down != null and right != null) self.toFlatIdx(down.?, right.?) else null,
+        };
     }
 
     fn toFlatIdx(self: *const Schematic, row: usize, col: usize) usize {
@@ -505,4 +533,154 @@ test "try to detect more edge cases making me fail day 3" {
     }
 
     try t.expectEqualSlices(u64, &expected, actual);
+}
+
+test "neighbor indice" {
+    debug.print("\n", .{});
+    const input =
+        //0123456789
+        \\*0..*1..2*
+        \\..........
+        \\..........
+        \\*3..*4..5*
+    ;
+    errdefer debug.print("\n{s}\n\n", .{input});
+
+    var schem = try Schematic.init(t.allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(t.allocator);
+
+    const expected = [_]Neighbors{
+        .{ //0,0
+            .up = null,
+            .down = 10,
+            .left = null,
+            .right = 1,
+            .upleft = null,
+            .upright = null,
+            .downleft = null,
+            .downright = 11,
+        },
+        .{ //0,4
+            .up = null,
+            .down = 14,
+            .left = 3,
+            .right = 5,
+            .upleft = null,
+            .upright = null,
+            .downleft = 13,
+            .downright = 15,
+        },
+        .{ //0,9
+            .up = null,
+            .down = 19,
+            .left = 8,
+            .right = null,
+            .upleft = null,
+            .upright = null,
+            .downleft = 18,
+            .downright = null,
+        },
+        .{ //3,0
+            .up = 20,
+            .down = null,
+            .left = null,
+            .right = 31,
+            .upleft = null,
+            .upright = 21,
+            .downleft = null,
+            .downright = null,
+        },
+        .{ //3,4
+            .up = 24,
+            .down = null,
+            .left = 33,
+            .right = 35,
+            .upleft = 23,
+            .upright = 25,
+            .downleft = null,
+            .downright = null,
+        },
+        .{ //3,9
+            .up = 29,
+            .down = null,
+            .left = 38,
+            .right = null,
+            .upleft = 28,
+            .upright = null,
+            .downleft = null,
+            .downright = null,
+        },
+    };
+
+    const actual = [_]Neighbors{
+        schem.neighborInd(0, 0),
+        schem.neighborInd(0, 4),
+        schem.neighborInd(0, 9),
+        schem.neighborInd(3, 0),
+        schem.neighborInd(3, 4),
+        schem.neighborInd(3, 9),
+    };
+
+    try t.expectEqualDeep(expected, actual);
+}
+
+test "part 2 example" {
+    debug.print("\n", .{});
+    const input =
+        \\467..114..
+        \\...*......
+        \\..35..633.
+        \\......#...
+        \\617*......
+        \\.....+.58.
+        \\..592.....
+        \\......755.
+        \\...$.*....
+        \\.664.598..
+    ;
+
+    errdefer debug.print("\n{s}\n\n", .{input});
+
+    var schem = try Schematic.init(t.allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(t.allocator);
+
+    const expected: u64 = 467835;
+    _ = expected;
+
+    const gears_cnt = mem.count(u8, schem.layout, "*");
+    const gears_ind = try t.allocator.alloc(usize, gears_cnt);
+    defer t.allocator.free(gears_ind);
+
+    var start: usize = 0;
+    for (gears_ind) |*ind| {
+        if (mem.indexOfScalarPos(u8, schem.layout, start, '*')) |found| {
+            ind.* = found;
+            start = found + 1;
+        } else {
+            break;
+        }
+    }
+
+    try t.expectEqualSlices(usize, &[_]usize{ 13, 43, 85 }, gears_ind);
+}
+
+pub fn part2(input: []const u8) !u64 {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var schem = try Schematic.init(allocator, input);
+    defer schem.deinit();
+
+    try schem.initParts(allocator);
+
+    var sum: u64 = 0;
+    for (schem.parts.?) |part| {
+        sum += if (part.symbolAdj()) part.part else 0;
+    }
+
+    return sum;
 }
