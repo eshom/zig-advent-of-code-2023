@@ -1,6 +1,7 @@
 const day1 = @import("day1.zig");
 const day2 = @import("day2.zig");
 const day3 = @import("day3.zig");
+const day4 = @import("day4.zig");
 
 const std = @import("std");
 const fs = std.fs;
@@ -71,6 +72,25 @@ pub fn main() !void {
         // part 2
         const day3_part2_answer = try day3.part2(day3_input);
         try stdout.print("Day3 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (wrong)\n", .{ ' ', day3_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
+
+    // day 4
+    {
+        const day4_input_file = try fs.cwd().openFile("src/inputs/day4.txt", .{});
+        defer day4_input_file.close();
+
+        const day4_input = try day4_input_file.readToEndAlloc(allocator, comptime 1024 * 1024);
+        defer allocator.free(day4_input);
+
+        // part 1
+        const day4_part1_answer = day4.part1(day4_input);
+        try stdout.print("Day4 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day4_part1_answer });
+
+        // part 2
+        // const day4_part2_answer = try day4.part2(day4_input);
+        // try stdout.print("Day4 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (wrong)\n", .{ ' ', day4_part2_answer });
 
         try stdout.print("\n", .{});
     }
