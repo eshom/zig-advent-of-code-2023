@@ -6,12 +6,13 @@ const debug = std.debug;
 const sort = std.sort;
 const math = std.math;
 const log = std.log;
+const heap = std.heap;
 
 const assert = std.debug.assert;
 
 const winning_numbers_capacity = 10;
 const numbers_have_capacity = 25;
-const max_cards = 213;
+pub const max_cards = 213;
 const card_winner_sentinel = 777;
 const card_have_sentinel = 999;
 
@@ -111,6 +112,27 @@ const Card = struct {
             return 0;
         };
     }
+
+    fn parseAllCardsWithWinners(allocator: mem.Allocator, input: []const u8, max: usize) ![]Card {
+        var line_iter = mem.splitScalar(u8, input, '\n');
+        const cards = try allocator.alloc(Card, max);
+        while (line_iter.next()) |line| {
+            if (line.len < 2) continue;
+            var card = Card.parseLine(line);
+            card.updateWinners();
+            assert(card.card_id > 0 and card.card_id <= max);
+            cards[card.card_id - 1] = card;
+        }
+
+        return cards;
+    }
+
+    fn nextCards(self: *const Card, deck: []const Card) ?[]const Card {
+        const wins = @as(usize, self.winSum());
+        if (wins == 0) return null;
+        const out = deck[self.card_id .. self.card_id + wins]; // input guranteed not to overflow
+        return out;
+    }
 };
 
 test "parse real card" {
@@ -179,4 +201,102 @@ pub fn part1(input: []const u8) u64 {
         sum += card.points();
     }
     return sum;
+}
+
+test "parse all cards" {
+    dprint("\n");
+    const input =
+        \\Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+        \\Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+        \\Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+        \\Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+        \\Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+        \\Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11
+    ;
+
+    const cards = try Card.parseAllCardsWithWinners(testing.allocator, input, 6);
+    defer testing.allocator.free(cards);
+
+    const expected_card_ids = [_]usize{ 1, 2, 3, 4, 5, 6 };
+    const actual_card_ids = [_]usize{
+        cards[0].card_id,
+        cards[1].card_id,
+        cards[2].card_id,
+        cards[3].card_id,
+        cards[4].card_id,
+        cards[5].card_id,
+    };
+
+    try testing.expectEqualSlices(usize, &expected_card_ids, &actual_card_ids);
+}
+
+test "get next cards" {
+    dprint("\n");
+    const input =
+        \\Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+        \\Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+        \\Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+        \\Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+        \\Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+        \\Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11
+    ;
+
+    const cards = try Card.parseAllCardsWithWinners(testing.allocator, input, 6);
+    defer testing.allocator.free(cards);
+
+    const expected_cards = cards[1..5];
+    const actual_cards = cards[0].nextCards(cards).?;
+
+    try testing.expectEqualDeep(expected_cards, actual_cards);
+}
+
+pub fn part2(input: []const u8, deck_size: usize) !u64 {
+    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    defer assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
+
+    const deck = try Card.parseAllCardsWithWinners(allocator, input, deck_size);
+    defer allocator.free(deck);
+
+    // const tmp_max_iter = 1000;
+    // var iter: usize = 0;
+
+    var total_cards: u64 = 0;
+    var stack = try std.ArrayList(Card).initCapacity(allocator, max_cards * 2);
+    defer stack.deinit();
+    assert(stack.items.len == 0);
+    try stack.appendSlice(deck);
+    assert(stack.items.len == deck.len);
+
+    while (stack.items.len > 0) {
+        // defer {
+        //     if (iter >= tmp_max_iter) @panic("Too many iterations");
+        //     iter += 1;
+        // }
+
+        const card = stack.pop();
+        total_cards += 1;
+
+        const more_cards = card.nextCards(deck) orelse continue;
+        try stack.appendSlice(more_cards);
+    }
+
+    return total_cards;
+}
+
+test "part 2 example" {
+    dprint("\n");
+    const input =
+        \\Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+        \\Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+        \\Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+        \\Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+        \\Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+        \\Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11
+    ;
+
+    const expected: u64 = 30;
+    const actual = try part2(input, 6);
+
+    try testing.expectEqual(expected, actual);
 }

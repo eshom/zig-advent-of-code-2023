@@ -89,8 +89,8 @@ pub fn main() !void {
         try stdout.print("Day4 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day4_part1_answer });
 
         // part 2
-        // const day4_part2_answer = try day4.part2(day4_input);
-        // try stdout.print("Day4 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (wrong)\n", .{ ' ', day4_part2_answer });
+        const day4_part2_answer = try day4.part2(day4_input, day4.max_cards);
+        try stdout.print("Day4 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day4_part2_answer });
 
         try stdout.print("\n", .{});
     }
