@@ -18,6 +18,19 @@ const Neighbors = struct {
     upright: ?usize,
     downleft: ?usize,
     downright: ?usize,
+
+    fn array(self: *const Neighbors) [8]?usize {
+        return [8]?usize{
+            self.up,
+            self.down,
+            self.left,
+            self.right,
+            self.upleft,
+            self.upright,
+            self.downleft,
+            self.downright,
+        };
+    }
 };
 
 const Schematic = struct {
@@ -649,15 +662,45 @@ test "part 2 example" {
     try schem.initParts(t.allocator);
 
     const expected: u64 = 467835;
-    _ = expected;
 
-    const gears_cnt = mem.count(u8, schem.layout, "*");
-    const gears_ind = try t.allocator.alloc(usize, gears_cnt);
+    const gears_ind = try gearsInds(t.allocator, &schem);
     defer t.allocator.free(gears_ind);
 
+    try t.expectEqualSlices(usize, &[_]usize{ 13, 43, 85 }, gears_ind);
+
+    const gears_ind_mat = [_]struct { usize, usize }{
+        schem.toMatIdx(gears_ind[0]),
+        schem.toMatIdx(gears_ind[1]),
+        schem.toMatIdx(gears_ind[2]),
+    };
+
+    const gear_neighs = [_]Neighbors{
+        schem.neighborInd(gears_ind_mat[0].@"0", gears_ind_mat[0].@"1"),
+        schem.neighborInd(gears_ind_mat[1].@"0", gears_ind_mat[1].@"1"),
+        schem.neighborInd(gears_ind_mat[2].@"0", gears_ind_mat[2].@"1"),
+    };
+
+    var actual: u64 = 0;
+
+    const found_gear_parts = try findGearPartNums(t.allocator, &schem, &gear_neighs);
+    defer t.allocator.free(found_gear_parts);
+
+    for (found_gear_parts) |parts_maybe| {
+        if (parts_maybe) |part| {
+            actual += part[0] * part[1];
+        }
+    }
+
+    try t.expectEqual(expected, actual);
+}
+
+// Caller should free memory
+fn gearsInds(allocator: mem.Allocator, schema: *const Schematic) ![]usize {
+    const gear_count = mem.count(u8, schema.layout, "*");
+    const gears_index = try allocator.alloc(usize, gear_count);
     var start: usize = 0;
-    for (gears_ind) |*ind| {
-        if (mem.indexOfScalarPos(u8, schem.layout, start, '*')) |found| {
+    for (gears_index) |*ind| {
+        if (mem.indexOfScalarPos(u8, schema.layout, start, '*')) |found| {
             ind.* = found;
             start = found + 1;
         } else {
@@ -665,7 +708,40 @@ test "part 2 example" {
         }
     }
 
-    try t.expectEqualSlices(usize, &[_]usize{ 13, 43, 85 }, gears_ind);
+    return gears_index;
+}
+
+fn findGearPartNums(
+    allocator: mem.Allocator,
+    schema: *const Schematic,
+    gear_neighbors: []const Neighbors,
+) ![]?[2]u64 {
+    const out = try allocator.alloc(?[2]u64, gear_neighbors.len);
+    for (gear_neighbors, 0..) |neigh, outer_idx| {
+        var part_count: usize = 0;
+        var found_nums = [2]u64{ 0, 0 };
+
+        const indice = neigh.array();
+        for (indice) |ind| {
+            if (ind == null) continue;
+
+            for (schema.parts.?) |part| {
+                if (mem.indexOfScalar(usize, part.indice, ind.?) != null) {
+                    if (part_count >= 2) break;
+                    found_nums[part_count] = part.part;
+                    part_count += 1;
+                }
+            }
+        }
+        assert(part_count <= 2);
+        if (part_count == 2) {
+            out[outer_idx] = found_nums;
+        } else {
+            out[outer_idx] = null;
+        }
+    }
+
+    return out;
 }
 
 pub fn part2(input: []const u8) !u64 {
@@ -677,10 +753,53 @@ pub fn part2(input: []const u8) !u64 {
 
     try schem.initParts(allocator);
 
+    const gears_ind = try gearsInds(allocator, &schem);
+    defer allocator.free(gears_ind);
+
+    const gears_ind_mat = try allocator.alloc(struct { usize, usize }, gears_ind.len);
+    defer allocator.free(gears_ind_mat);
+    for (gears_ind_mat, gears_ind) |*mat, flat| {
+        mat.* = schem.toMatIdx(flat);
+    }
+
+    const neighbors = try allocator.alloc(Neighbors, gears_ind_mat.len);
+    defer allocator.free(neighbors);
+    for (neighbors, gears_ind_mat) |*neigh, indice| {
+        neigh.* = schem.neighborInd(indice.@"0", indice.@"1");
+    }
+
+    const found_gear_parts = try findGearPartNums(allocator, &schem, neighbors);
+    defer allocator.free(found_gear_parts);
+
     var sum: u64 = 0;
-    for (schem.parts.?) |part| {
-        sum += if (part.symbolAdj()) part.part else 0;
+    for (found_gear_parts) |parts_maybe| {
+        if (parts_maybe) |part| {
+            sum += part[0] * part[1];
+        }
     }
 
     return sum;
+}
+
+test "part 2 function for example" {
+    debug.print("\n", .{});
+    const input =
+        \\467..114..
+        \\...*......
+        \\..35..633.
+        \\......#...
+        \\617*......
+        \\.....+.58.
+        \\..592.....
+        \\......755.
+        \\...$.*....
+        \\.664.598..
+    ;
+
+    errdefer debug.print("\n{s}\n\n", .{input});
+
+    const expected: u64 = 467835;
+    const actual: u64 = try part2(input);
+
+    try t.expectEqual(expected, actual);
 }

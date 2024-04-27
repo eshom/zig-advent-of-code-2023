@@ -33,6 +33,8 @@ pub fn main() !void {
         // part 2
         const day1_part2_answer = day1.part2(day1_input);
         try stdout.print("Day1 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day1_part2_answer });
+
+        try stdout.print("\n", .{});
     }
 
     // day 2
@@ -66,9 +68,10 @@ pub fn main() !void {
         const day3_part1_answer = try day3.part1(day3_input);
         try stdout.print("Day3 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day3_part1_answer });
 
-        // // part 2
-        // const day3_part2_answer = try day3.part2(day3_input);
-        // try stdout.print("day3 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day3_part2_answer });
+        // part 2
+        const day3_part2_answer = try day3.part2(day3_input);
+        try stdout.print("Day3 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (wrong)\n", .{ ' ', day3_part2_answer });
+
         try stdout.print("\n", .{});
     }
 }
