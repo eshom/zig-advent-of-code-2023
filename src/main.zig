@@ -3,6 +3,7 @@ const day2 = @import("day2.zig");
 const day3 = @import("day3.zig");
 const day4 = @import("day4.zig");
 
+const config = @import("config");
 const std = @import("std");
 const fs = std.fs;
 const heap = std.heap;
@@ -18,9 +19,10 @@ pub fn main() !void {
     defer if (gpa.deinit() != .ok) @panic("Memoery leak detected");
 
     const stdout = io.getStdOut().writer();
+    try stdout.writeByte('\n');
 
     // day 1
-    {
+    if (config.day == 1 or config.day == 0) {
         const day1_input_file = try fs.cwd().openFile("src/inputs/day1.txt", .{});
         defer day1_input_file.close();
 
@@ -39,7 +41,7 @@ pub fn main() !void {
     }
 
     // day 2
-    {
+    if (config.day == 2 or config.day == 0) {
         const day2_input_file = try fs.cwd().openFile("src/inputs/day2.txt", .{});
         defer day2_input_file.close();
 
@@ -58,7 +60,7 @@ pub fn main() !void {
     }
 
     // day 3
-    {
+    if (config.day == 3 or config.day == 0) {
         const day3_input_file = try fs.cwd().openFile("src/inputs/day3.txt", .{});
         defer day3_input_file.close();
 
@@ -77,7 +79,7 @@ pub fn main() !void {
     }
 
     // day 4
-    {
+    if (config.day == 4 or config.day == 0) {
         const day4_input_file = try fs.cwd().openFile("src/inputs/day4.txt", .{});
         defer day4_input_file.close();
 
