@@ -115,6 +115,13 @@ pub fn main() !void {
         try stdout.print("Day5 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day5_part1_answer });
 
         // part 2
+        // NOTE: got the correct answer, but it's very inefficient.
+        // Should have taken bottom up approch:
+        // 1. Start with locations, not seeds
+        // 2. First locations is 0, then count up
+        // 3. Traverse the graph backwards
+        // 4. If the seed is valid (in range) then you are done. It's the minimal possible location :-)
+
         // const day5_part2_answer = try day5.part2(day5_input);
         const day5_part2_answer = 56931769;
         // try stdout.print("Day5 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day5_part2_answer });
