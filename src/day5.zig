@@ -545,3 +545,155 @@ test "part 1 example" {
 
     try testing.expectEqual(35, try part1(input));
 }
+
+fn seeds2(allocator: mem.Allocator, input: []const u8) ![]u64 {
+    var seeds_line_iter = mem.splitScalar(u8, input, '\n');
+    const seeds_line = seeds_line_iter.first();
+    var seeds_str_iter = mem.splitScalar(u8, seeds_line, ':');
+    _ = seeds_str_iter.next();
+    const seeds_str = seeds_str_iter.next().?;
+    const seeds_str_trimmed = mem.trim(u8, seeds_str, " ");
+
+    // part 2 logic is different, seed values definition come in pairs
+    var to_parse_iter = mem.splitScalar(u8, seeds_str_trimmed, ' ');
+    var seed_count: usize = 0;
+    while (true) {
+        const start_str = to_parse_iter.next() orelse break;
+        const start = try fmt.parseInt(usize, start_str, 10);
+        const len_str = to_parse_iter.next().?; // assuming pairs guranteed
+        const len = try fmt.parseInt(usize, len_str, 10);
+        for (start..start + len) |_| {
+            seed_count += 1;
+        }
+    }
+
+    std.debug.print("seed count {d}\n", .{seed_count});
+
+    const out_seeds = try allocator.alloc(u64, seed_count);
+    to_parse_iter.reset();
+    var idx: usize = 0;
+    while (true) {
+        const start_str = to_parse_iter.next() orelse break;
+        const start = try fmt.parseInt(usize, start_str, 10);
+        const len_str = to_parse_iter.next().?; // assuming pairs guranteed
+        const len = try fmt.parseInt(usize, len_str, 10);
+        for (start..start + len) |seed| {
+            out_seeds[idx] = seed;
+            idx += 1;
+        }
+    }
+
+    return out_seeds;
+}
+
+test "part 2 initial seeds" {
+    std.debug.print("\n", .{});
+
+    const input =
+        \\seeds: 79 14 55 13
+        \\
+        \\seed-to-soil map:
+        \\50 98 2
+        \\52 50 48
+        \\
+        \\soil-to-fertilizer map:
+        \\0 15 37
+        \\37 52 2
+        \\39 0 15
+        \\
+        \\fertilizer-to-water map:
+        \\49 53 8
+        \\0 11 42
+        \\42 0 7
+        \\57 7 4
+        \\
+        \\water-to-light map:
+        \\88 18 7
+        \\18 25 70
+        \\
+        \\light-to-temperature map:
+        \\45 77 23
+        \\81 45 19
+        \\68 64 13
+        \\
+        \\temperature-to-humidity map:
+        \\0 69 1
+        \\1 0 69
+        \\
+        \\humidity-to-location map:
+        \\60 56 37
+        \\56 93 4
+    ;
+
+    const expected = [_]u64{ 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67 };
+    const actual = try seeds2(testing.allocator, input);
+    defer testing.allocator.free(actual);
+
+    try testing.expectEqualSlices(u64, &expected, actual);
+}
+
+pub fn part2(input: []const u8) !u64 {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
+
+    // var arena = std.heap.ArenaAllocator.init(_allocator);
+    // defer arena.deinit();
+
+    // const allocator = arena.allocator();
+
+    var pmap = try ProductionMap.init(allocator, input);
+    defer pmap.deinit();
+
+    const start_seeds = try seeds2(allocator, input);
+    defer allocator.free(start_seeds);
+
+    var min: usize = std.math.maxInt(usize);
+    for (start_seeds) |seed| {
+        min = @min(pmap.traverseToLocation(seed), min);
+    }
+
+    return @as(u64, min);
+}
+
+test "part 2 example" {
+    std.debug.print("\n", .{});
+
+    const input =
+        \\seeds: 79 14 55 13
+        \\
+        \\seed-to-soil map:
+        \\50 98 2
+        \\52 50 48
+        \\
+        \\soil-to-fertilizer map:
+        \\0 15 37
+        \\37 52 2
+        \\39 0 15
+        \\
+        \\fertilizer-to-water map:
+        \\49 53 8
+        \\0 11 42
+        \\42 0 7
+        \\57 7 4
+        \\
+        \\water-to-light map:
+        \\88 18 7
+        \\18 25 70
+        \\
+        \\light-to-temperature map:
+        \\45 77 23
+        \\81 45 19
+        \\68 64 13
+        \\
+        \\temperature-to-humidity map:
+        \\0 69 1
+        \\1 0 69
+        \\
+        \\humidity-to-location map:
+        \\60 56 37
+        \\56 93 4
+    ;
+
+    try testing.expectEqual(46, try part2(input));
+}
