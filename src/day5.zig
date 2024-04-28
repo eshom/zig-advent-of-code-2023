@@ -17,7 +17,7 @@ fn seeds(allocator: mem.Allocator, input: []const u8) ![]u64 {
 
     var idx: usize = 0;
     while (to_parse_iter.next()) |num_str| : (idx += 1) {
-        out_seeds[idx] = try fmt.parseInt(u8, num_str, 10);
+        out_seeds[idx] = try fmt.parseInt(usize, num_str, 10);
     }
 
     return out_seeds;
@@ -84,6 +84,94 @@ fn mapSection(map: *std.AutoHashMap(usize, usize), section: []const u8) !void {
         }
     }
 }
+
+fn mapSection2(allocator: mem.Allocator, section: []const u8, magic: bool) !Map {
+    var line_iter = mem.splitScalar(u8, section, '\n');
+
+    // Because last section does not end with new line
+    var newline_count: usize = 0;
+    if (magic) {
+        newline_count = mem.count(u8, section, "\n") + 1;
+    } else {
+        newline_count = mem.count(u8, section, "\n") - 1;
+    }
+
+    const out_dest = try allocator.alloc(usize, newline_count);
+    errdefer allocator.free(out_dest);
+    const out_src = try allocator.alloc(usize, newline_count);
+    errdefer allocator.free(out_src);
+    const out_len = try allocator.alloc(usize, newline_count);
+    errdefer allocator.free(out_len);
+
+    var idx: usize = 0;
+    while (line_iter.next()) |line| : (idx += 1) {
+        if (line.len <= 1) {
+            idx -= 1;
+            continue;
+        }
+
+        var num_iter = mem.splitScalar(u8, mem.trim(u8, line, " "), ' ');
+        out_dest[idx] = try fmt.parseInt(usize, num_iter.next().?, 10);
+        out_src[idx] = try fmt.parseInt(usize, num_iter.next().?, 10);
+        out_len[idx] = try fmt.parseInt(usize, num_iter.next().?, 10);
+    }
+
+    return .{ .dest = out_dest[0..idx], .src = out_src[0..idx], .len = out_len[0..idx], .allocator = allocator };
+}
+
+const Map = struct {
+    dest: []usize,
+    src: []usize,
+    len: []usize,
+    allocator: mem.Allocator,
+
+    fn initFields(
+        allocator: mem.Allocator,
+        input: []const u8,
+        section_title: []const u8,
+        section_next_title: ?[]const u8,
+    ) !Map {
+        const section_start = mem.indexOf(u8, input, section_title).?;
+        const section_end = if (section_next_title) |title| mem.indexOfPos(u8, input, section_start, title).? else input.len;
+        const section_dirty = input[section_start..section_end];
+        const section = mem.trimLeft(u8, section_dirty, section_title);
+
+        if (mem.eql(u8, section_title, "humidity-to-location map:\n")) {
+            return try mapSection2(allocator, section, true);
+        } else {
+            return try mapSection2(allocator, section, false);
+        }
+    }
+
+    fn deinitFields(self: *const Map) void {
+        self.allocator.free(self.dest);
+        self.allocator.free(self.src);
+        self.allocator.free(self.len);
+    }
+
+    fn get(self: *const Map, key: usize) usize {
+        // std.debug.print("Key: {d} Map: dest = {any} src = {any} len = {any}\n", .{ key, self.dest, self.src, self.len });
+        var in_range = false;
+        var range_idx: usize = 0;
+        for (self.src, self.len, 0..) |src, len, idx| {
+            // std.debug.print("key between sources? {any}\n", .{key >= src and key < src + len});
+            if (key >= src and key < src + len) {
+                in_range = true;
+                range_idx = idx;
+                break;
+            }
+        }
+
+        if (!in_range) return key;
+        if (self.dest[range_idx] > self.src[range_idx]) {
+            return key + self.dest[range_idx] - self.src[range_idx];
+        } else if (self.dest[range_idx] < self.src[range_idx]) {
+            return key - self.src[range_idx] + self.dest[range_idx];
+        } else {
+            return key;
+        }
+    }
+};
 
 fn seedToSoilMap(allocator: mem.Allocator, input: []const u8) !std.AutoHashMap(usize, usize) {
     const section_start = mem.indexOf(u8, input, "seed-to-soil map:\n").?;
@@ -291,29 +379,29 @@ test "destination from seed to soil" {
 
 const ProductionMap = struct {
     allocator: mem.Allocator,
-    map: [7]std.AutoHashMap(usize, usize),
+    map: [7]Map,
 
     fn init(allocator: mem.Allocator, input: []const u8) !ProductionMap {
-        var seed = try seedToSoilMap(allocator, input);
-        errdefer seed.deinit();
+        const seed = try Map.initFields(allocator, input, "seed-to-soil map:\n", "soil-to-fertilizer map:\n");
+        errdefer seed.deinitFields();
 
-        var soil = try soilToFertilizerMap(allocator, input);
-        errdefer soil.deinit();
+        const soil = try Map.initFields(allocator, input, "soil-to-fertilizer map:\n", "fertilizer-to-water map:\n");
+        errdefer soil.deinitFields();
 
-        var fert = try fertilizerToWaterMap(allocator, input);
-        errdefer fert.deinit();
+        const fert = try Map.initFields(allocator, input, "fertilizer-to-water map:\n", "water-to-light map:\n");
+        errdefer fert.deinitFields();
 
-        var wate = try waterToLightMap(allocator, input);
-        errdefer wate.deinit();
+        const wate = try Map.initFields(allocator, input, "water-to-light map:\n", "light-to-temperature map:\n");
+        errdefer wate.deinitFields();
 
-        var ligh = try lightToTemperatureMap(allocator, input);
-        errdefer ligh.deinit();
+        const ligh = try Map.initFields(allocator, input, "light-to-temperature map:\n", "temperature-to-humidity map:\n");
+        errdefer soil.deinitFields();
 
-        var temp = try temperatureToHumidityMap(allocator, input);
-        errdefer temp.deinit();
+        const temp = try Map.initFields(allocator, input, "temperature-to-humidity map:\n", "humidity-to-location map:\n");
+        errdefer soil.deinitFields();
 
-        var humi = try humidityToLocationMap(allocator, input);
-        errdefer humi.deinit();
+        const humi = try Map.initFields(allocator, input, "humidity-to-location map:\n", null);
+        errdefer soil.deinitFields();
 
         return .{
             .allocator = allocator,
@@ -323,16 +411,20 @@ const ProductionMap = struct {
 
     fn deinit(self: *ProductionMap) void {
         for (self.map) |map| {
-            const map_p = @constCast(&map); // map becomes const in for loop capture I think
-            map_p.deinit();
+            map.allocator.free(map.dest);
+            map.allocator.free(map.src);
+            map.allocator.free(map.len);
         }
     }
 
     fn traverseToLocation(self: *const ProductionMap, start: usize) usize {
+        // std.debug.print("seed start: {d}\n", .{start});
         var location = start;
         for (self.map) |map| {
-            location = destination(map, location);
+            location = map.get(location);
+            // std.debug.print("location: {d}\n", .{location});
         }
+        // std.debug.print("end traverse: \n", .{});
         return location;
     }
 };
@@ -391,7 +483,12 @@ test "seeds to locations" {
 pub fn part1(input: []const u8) !u64 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
-    const allocator = gpa.allocator();
+    const _allocator = gpa.allocator();
+
+    var arena = std.heap.ArenaAllocator.init(_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
 
     var pmap = try ProductionMap.init(allocator, input);
     defer pmap.deinit();
