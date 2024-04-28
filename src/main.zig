@@ -115,8 +115,10 @@ pub fn main() !void {
         try stdout.print("Day5 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day5_part1_answer });
 
         // part 2
-        const day5_part2_answer = try day5.part2(day5_input);
-        try stdout.print("Day5 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day5_part2_answer });
+        // const day5_part2_answer = try day5.part2(day5_input);
+        const day5_part2_answer = 56931769;
+        // try stdout.print("Day5 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day5_part2_answer });
+        try stdout.print("Day5 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (cached)\n", .{ ' ', day5_part2_answer });
 
         try stdout.print("\n", .{});
     }

@@ -419,10 +419,18 @@ const ProductionMap = struct {
 
     fn traverseToLocation(self: *const ProductionMap, start: usize) usize {
         // std.debug.print("seed start: {d}\n", .{start});
+        // var cache = std.HashMap(Map, usize).init(std.heap.page_allocator);
+        // defer cache.deinit();
+
         var location = start;
         for (self.map) |map| {
+            // const result_maybe = cache.get(map);
+            // if (result_maybe) |result| {
+            // location = result;
+            // } else {
             location = map.get(location);
-            // std.debug.print("location: {d}\n", .{location});
+            // cache.putNoClobber(map, location) catch @panic("Can't recover from memory allocation issue");
+            // }
         }
         // std.debug.print("end traverse: \n", .{});
         return location;
@@ -567,7 +575,7 @@ fn seeds2(allocator: mem.Allocator, input: []const u8) ![]u64 {
         }
     }
 
-    std.debug.print("seed count {d}\n", .{seed_count});
+    // std.debug.print("seed count {d}\n", .{seed_count});
 
     const out_seeds = try allocator.alloc(u64, seed_count);
     to_parse_iter.reset();
@@ -645,12 +653,37 @@ pub fn part2(input: []const u8) !u64 {
     var pmap = try ProductionMap.init(allocator, input);
     defer pmap.deinit();
 
-    const start_seeds = try seeds2(allocator, input);
-    defer allocator.free(start_seeds);
+    //NOTE: can't preallocate all the seeds, need to go through them one by one
+    // const start_seeds = try seeds2(allocator, input);
+    // defer allocator.free(start_seeds);
+
+    var seeds_line_iter = mem.splitScalar(u8, input, '\n');
+    const seeds_line = seeds_line_iter.first();
+    var seeds_str_iter = mem.splitScalar(u8, seeds_line, ':');
+    _ = seeds_str_iter.next();
+    const seeds_str = seeds_str_iter.next().?;
+    const seeds_str_trimmed = mem.trim(u8, seeds_str, " ");
+    var to_parse_iter = mem.splitScalar(u8, seeds_str_trimmed, ' ');
 
     var min: usize = std.math.maxInt(usize);
-    for (start_seeds) |seed| {
-        min = @min(pmap.traverseToLocation(seed), min);
+    // var cache = std.AutoHashMap(u64, usize).init(allocator);
+    // defer cache.deinit();
+    while (true) {
+        const start_str = to_parse_iter.next() orelse break;
+        const start = try fmt.parseInt(usize, start_str, 10);
+        const len_str = to_parse_iter.next().?; // assuming pairs guranteed
+        const len = try fmt.parseInt(usize, len_str, 10);
+
+        for (start..start + len) |seed| {
+            // const result_maybe = cache.get(seed);
+
+            // if (result_maybe) |result| {
+            // min = @min(result, min);
+            // } else {
+            min = @min(pmap.traverseToLocation(seed), min);
+            // try cache.putNoClobber(seed, min);
+            // }
+        }
     }
 
     return @as(u64, min);
