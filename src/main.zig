@@ -39,7 +39,7 @@ pub fn main() !void {
 
     // day 2
     if (config.day == 2 or config.day == 0) {
-        const day2 = @import("day3.zig");
+        const day2 = @import("day2.zig");
 
         const day2_input_file = try fs.cwd().openFile("src/inputs/day2.txt", .{});
         defer day2_input_file.close();
@@ -152,6 +152,27 @@ pub fn main() !void {
         const dist: u64 = 207_139_412_091_014;
         const day6_part2_answer = day6.part2(time, dist);
         try stdout.print("Day6 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day6_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
+
+    // day 7
+    if (config.day == 7 or config.day == 0) {
+        const day7 = @import("day7.zig");
+
+        const day7_input_file = try fs.cwd().openFile("src/inputs/day7.txt", .{});
+        defer day7_input_file.close();
+
+        const day7_input = try day7_input_file.readToEndAlloc(allocator, comptime 1024 * 1024);
+        defer allocator.free(day7_input);
+
+        // part 1
+        const day7_part1_answer = try day7.part1(day7_input);
+        try stdout.print("Day7 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day7_part1_answer });
+
+        // part 2
+        // const day7_part2_answer = try day7.part2(day7_input);
+        // try stdout.print("Day7 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d} (wrong)\n", .{ ' ', day7_part2_answer });
 
         try stdout.print("\n", .{});
     }
