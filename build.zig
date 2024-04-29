@@ -76,6 +76,13 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         },
     );
+    const day6_tests = b.addTest(
+        .{
+            .root_source_file = .{ .path = "src/day6.zig" },
+            .target = target,
+            .optimize = optimize,
+        },
+    );
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
@@ -86,4 +93,5 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&day3_tests.step);
     test_step.dependOn(&day4_tests.step);
     test_step.dependOn(&day5_tests.step);
+    test_step.dependOn(&day6_tests.step);
 }

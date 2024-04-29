@@ -129,4 +129,30 @@ pub fn main() !void {
 
         try stdout.print("\n", .{});
     }
+
+    // day 6
+    if (config.day == 6 or config.day == 0) {
+        const day6 = @import("day6.zig");
+
+        //const day6_input_file = try fs.cwd().openFile("src/inputs/day6.txt", .{});
+        //defer day6_input_file.close();
+
+        //const day6_input = try day6_input_file.readToEndAlloc(allocator, comptime 1024 * 1024);
+        //defer allocator.free(day6_input);
+
+        const times = [_]u64{ 47, 84, 74, 67 };
+        const dists = [_]u64{ 207, 1394, 1209, 1014 };
+
+        // part 1
+        const day6_part1_answer = day6.part1(&times, &dists);
+        try stdout.print("Day6 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day6_part1_answer });
+
+        // part 2
+        const time: u64 = 47_847_467;
+        const dist: u64 = 207_139_412_091_014;
+        const day6_part2_answer = day6.part2(time, dist);
+        try stdout.print("Day6 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day6_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
 }
