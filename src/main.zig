@@ -177,4 +177,25 @@ pub fn main() !void {
 
         try stdout.print("\n", .{});
     }
+
+    // day 8
+    if (config.day == 8 or config.day == 0) {
+        const day8 = @import("day8.zig");
+
+        const day8_input_file = try fs.cwd().openFile("src/inputs/day8.txt", .{});
+        defer day8_input_file.close();
+
+        const day8_input = try day8_input_file.readToEndAlloc(allocator, comptime 1024 * 1024);
+        defer allocator.free(day8_input);
+
+        // part 1
+        const day8_part1_answer = try day8.part1(day8_input);
+        try stdout.print("Day8 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day8_part1_answer });
+
+        // part 2
+        // const day8_part2_answer = try day8.part2(day8_input);
+        // try stdout.print("Day8 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day8_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
 }
