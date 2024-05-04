@@ -198,4 +198,26 @@ pub fn main() !void {
 
         try stdout.print("\n", .{});
     }
+
+    // day 9
+    if (config.day == 9 or config.day == 0) {
+        const day9 = @import("day9.zig");
+        try std.posix.chdir("src/");
+        defer std.posix.chdir("../") catch std.debug.panic("cannot not change directory to ../", .{});
+
+        const line_len = 200; // checked manually
+        const vec_len = day9.inputVecLen("inputs/day9.txt");
+        const day9_input = try day9.readInput(allocator, "inputs/day9.txt");
+        defer allocator.free(day9_input);
+
+        // part 1
+        const day9_part1_answer = try day9.part1(day9_input, line_len, vec_len);
+        try stdout.print("Day9 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day9_part1_answer });
+
+        // part 2
+        // const day9_part2_answer = try day9.part2(day9_input);
+        // try stdout.print("Day9 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day9_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
 }
