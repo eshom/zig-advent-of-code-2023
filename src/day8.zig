@@ -22,6 +22,7 @@ const NetworkMap = struct {
     map: StringArrayHashMap(LR),
     instructions: *Instructions,
     visit_count: usize = 0,
+    visit_count_atomic: atomic.Value(usize) = atomic.Value(usize).init(0),
     allocator: Allocator,
 
     const Self = @This();
@@ -64,7 +65,10 @@ const NetworkMap = struct {
     // Goes to next node according to current instructions
     // returns key of next left/right node
     fn visit(self: *Self, key: []const u8) ![]const u8 {
-        defer self.visit_count += 1; // In error case visit count is invalid
+        defer self.visit_count += 1;
+        defer _ = self.visit_count_atomic.fetchAdd(1, .monotonic);
+        errdefer self.visit_count -= 1;
+        errdefer _ = self.visit_count_atomic.fetchSub(1, .monotonic);
         const dir = self.instructions.next();
         switch (dir) {
             .L => if (self.map.get(key)) |entry| return entry.left else return error.LeftNotfound,
@@ -74,6 +78,7 @@ const NetworkMap = struct {
 
     fn reset(self: *Self) void {
         self.visit_count = 0;
+        self.visit_count_atomic.store(0, .monotonic);
         self.instructions.inst_idx = 0;
     }
 
@@ -335,6 +340,129 @@ test "get starting nodes" {
     }
 }
 
+pub fn part2(input: []const u8) !u64 {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const map = try NetworkMap.init(allocator, input);
+    defer map.deinit();
+
+    const start_keys = try map.nodesEndWith(allocator, 'A');
+    defer allocator.free(start_keys);
+
+    const map_arr = try allocator.alloc(*NetworkMap, start_keys.len);
+    defer allocator.free(map_arr);
+    for (map_arr) |*m| {
+        m.* = try NetworkMap.init(allocator, input);
+    }
+    defer {
+        for (map_arr) |m| {
+            m.deinit();
+        }
+    }
+
+    const threads_end = try allocator.alloc(atomic.Value(bool), start_keys.len);
+    defer allocator.free(threads_end);
+    for (threads_end) |*thren| {
+        thren.store(false, .monotonic);
+    }
+
+    const stop_signal = try allocator.alloc(atomic.Value(bool), start_keys.len);
+    defer allocator.free(stop_signal);
+    for (stop_signal) |*stop| {
+        stop.store(true, .monotonic);
+    }
+
+    const exit_signal = try allocator.alloc(atomic.Value(bool), start_keys.len);
+    defer allocator.free(exit_signal);
+    for (exit_signal) |*exit| {
+        exit.store(false, .monotonic);
+    }
+
+    const n_threads = comptime 7;
+    assert(n_threads >= map_arr.len);
+
+    // const threads = [n_threads]Thread;
+    const threads = try allocator.alloc(Thread, start_keys.len);
+    defer allocator.free(threads);
+
+    var mutex = Thread.Mutex{};
+
+    for (threads, 0..) |*th, idx| {
+        th.* = Thread.spawn(.{}, travelStepsThread, .{
+            idx,
+            map_arr[idx],
+            start_keys[idx],
+            'Z',
+            &threads_end[idx],
+            &stop_signal[idx],
+            &exit_signal[idx],
+            &mutex,
+        }) catch |err| {
+            std.debug.panic("error spawning thread {d}: {any}\n", .{ idx, err });
+        };
+    }
+
+    outer: while (true) {
+        time.sleep(10);
+
+        // threads should wait while main makes decisions
+        mutex.lock();
+        defer mutex.unlock();
+
+        var max_step: usize = 0;
+        for (map_arr) |m| {
+            max_step = @max(max_step, m.visit_count_atomic.load(.monotonic));
+        }
+
+        for (map_arr, stop_signal) |m, *stp| {
+            if (m.visit_count_atomic.load(.monotonic) < max_step) {
+                stp.store(false, .monotonic);
+            } else {
+                stp.store(true, .monotonic);
+            }
+        }
+
+        // std.debug.print("Main: threads end: {any}\n", .{threads_end});
+        // all on end point and same step?
+        for (map_arr) |m| {
+            // checking if all in same step
+            if (m.visit_count_atomic.load(.monotonic) != max_step) break;
+        } else {
+            // same step branch
+            var all_end = true;
+            for (threads_end) |end| {
+                all_end = all_end and end.load(.monotonic);
+            }
+            if (all_end) {
+                // same end point branch
+                for (exit_signal) |*exit| {
+                    exit.store(true, .monotonic);
+                }
+                break :outer;
+            } else {
+                // different end points branch
+                for (stop_signal) |*stp| {
+                    stp.store(false, .monotonic);
+                }
+            }
+        }
+    }
+
+    for (threads) |t| {
+        t.join();
+    }
+
+    const answer: u64 = map_arr[0].visit_count_atomic.load(.monotonic);
+    for (1..map_arr.len) |idx| {
+        if (answer != map_arr[idx].visit_count_atomic.load(.monotonic)) {
+            return error.AnswerNotSynced;
+        }
+    } else {
+        return answer;
+    }
+}
+
 test "part 2 example" {
     std.debug.print("\n", .{});
     const input =
@@ -350,192 +478,83 @@ test "part 2 example" {
         \\XXX = (XXX, XXX)
     ;
 
-    const map = try NetworkMap.init(testing.allocator, input);
-    defer map.deinit();
+    try testing.expectEqual(6, try part2(input));
+}
 
-    const start_keys = try map.nodesEndWith(testing.allocator, 'A');
-    defer testing.allocator.free(start_keys);
+fn travelStepsThread(
+    id: usize,
+    map: *NetworkMap,
+    from: []const u8,
+    to_char: u8,
+    end: *atomic.Value(bool),
+    stop: *const atomic.Value(bool),
+    exit: *const atomic.Value(bool),
+    mutex: *Thread.Mutex,
+) void {
+    // defer std.debug.print("Thread {d}: exit\n", .{id});
+    var key = from;
 
-    const map_arr = try testing.allocator.alloc(*NetworkMap, start_keys.len);
-    defer testing.allocator.free(map_arr);
-    for (map_arr) |*m| {
-        m.* = try NetworkMap.init(testing.allocator, input);
-    }
-    defer {
-        for (map_arr) |m| {
-            m.deinit();
-        }
-    }
-
-    const threads_done = try testing.allocator.alloc(atomic.Value(bool), start_keys.len);
-    defer testing.allocator.free(threads_done);
-    for (threads_done) |*td| {
-        td.store(false, .monotonic);
-    }
-
-    const threads_end = try testing.allocator.alloc(atomic.Value(bool), start_keys.len);
-    defer testing.allocator.free(threads_end);
-    for (threads_done) |*thren| {
-        thren.store(false, .monotonic);
-    }
-
-    const threads_error = try testing.allocator.alloc(atomic.Value(bool), start_keys.len);
-    defer testing.allocator.free(threads_error);
-    for (threads_error) |*te| {
-        te.store(false, .monotonic);
-    }
-
-    var all_done = atomic.Value(bool).init(false);
-    var all_on_same_step = atomic.Value(bool).init(false);
-    var force_exit = atomic.Value(bool).init(false);
-
-    const n_threads = comptime 7;
-    assert(n_threads >= map_arr.len);
-
-    // const threads = [n_threads]Thread;
-    const threads = try testing.allocator.alloc(Thread, start_keys.len);
-    defer testing.allocator.free(threads);
-
-    //TODO: Try atomic visit count
-    for (threads, 0.., map_arr) |*th, idx, m| {
-        th.* = Thread.spawn(.{}, travelStepsThread, .{
-            idx,
-            m,
-            start_keys[idx],
-            'Z',
-            &threads_done[idx],
-            &threads_end[idx],
-            &threads_error[idx],
-            &all_done,
-            &all_on_same_step,
-            &force_exit,
-        }) catch {
-            force_exit.store(true, .monotonic);
-            break;
-        };
-    }
-
-    // update shared memory
-    var all_done_check = false;
-    var all_on_same_step_check = false;
     while (true) {
-        //     for (map_arr, 0..) |m, id| {
-        //         std.debug.print("Thread {d}: visit count: {d}, local_done? {any}, global_done? {any}\n", .{
-        //             id,
-        //             m.visit_count,
-        //             all_done.load(.monotonic),
-        //             all_on_same_step.load(.monotonic),
-        //         });
-        //     }
+        defer time.sleep(10);
+        // std.debug.print("Thread {d}: starting step {d}\n", .{ id, map.visit_count_atomic.load(.monotonic) });
+        // defer std.debug.print("Thread {d}: done and on step {d}\n", .{ id, map.visit_count_atomic.load(.monotonic) });
 
-        // std.debug.print("main: addr local done: {*}\n", .{&all_done});
-        time.sleep(500 * time.ns_per_ms); // NOTE: Adjust for performance
-
-        // Check for thread error
-        for (threads_error) |err| {
-            if (err.load(.monotonic)) {
-                force_exit.store(true, .monotonic);
-                break;
-            }
+        // Did main signal thread to continue?
+        while (stop.load(.monotonic)) {
+            time.sleep(10);
+            if (exit.load(.monotonic)) return;
         }
 
-        // are all threads on local end point?
-        all_done_check = true;
-        for (threads_done) |done| {
-            all_done_check = all_done_check and done.load(.monotonic);
-        }
+        mutex.lock();
+        defer mutex.unlock();
 
-        if (all_done_check) {
-            // are all threads on the same step? (end condition)
-            // all_on_same_step_check = true;
-            // var prev_t_step: usize = map_arr[0].visit_count;
-            // for (map_arr[1..]) |m| {
-            //     const vc = m.visit_count;
-            //     all_on_same_step_check = all_on_same_step_check and prev_t_step == vc;
-            //     prev_t_step = vc;
-            // }
+        // Did main signal thread to exit?
+        if (exit.load(.monotonic)) break;
 
-            all_on_same_step_check = true;
-            for (threads_end) |end| {
-                all_on_same_step_check = all_on_same_step_check and end.load(.monotonic);
-                std.debug.print("Main: On end per thread?  {any}\n", .{end.load(.monotonic)});
-            }
+        // Update step
+        // std.debug.print("Thread {d}: {s} -> ", .{ id, key });
+        key = map.visit(key) catch {
+            std.debug.print("Thread {d}: error while visiting next location from {s}\n", .{ id, from });
+            return;
+        };
+        // std.debug.print("{s}\n", .{key});
 
-            // if this is true we can signal threads to stop
-            if (all_on_same_step_check) {
-                all_on_same_step.store(true, .monotonic);
-                all_done.store(true, .monotonic);
-                break; // All that's left is to wait for threads to finish
-            } else {
-                // After this threads should continue to next step
-                all_done.store(true, .monotonic);
-            }
-        }
-    }
-
-    for (threads) |t| {
-        t.join();
-    }
-
-    for (map_arr, 0..) |m, id| {
-        std.debug.print("Thread {d}: visit count: {d}\n", .{ id, m.visit_count });
+        // Update if on end point
+        if (key[2] == to_char) end.store(true, .monotonic) else end.store(false, .monotonic);
+        // std.debug.print("Thread {d}: end point {any}\n", .{ id, end });
     }
 }
 
-// Thread related params:
-// `step` - Thread updates the step it is on. Main initializes to 0.
-// `done` - Thread updates when it found local end point
-// `error_signal` - Thread signals if it encounters some error
-// `all_done` - Main thread updates when all threads are sleeping on local end point
-// `all_on_same_step` - Main thread updates when all threads are done on the same step
-// This is the condition for thread to finish execution
-// `force_exit` - Main thread signals if thread must exit early
-fn travelStepsThread(
-    id: usize,
-    nmap: *NetworkMap, // visit_count gets updated, it's not thread safe but worst case main will wait a bit longer
-    from: []const u8,
-    to_char: u8,
-    done: *atomic.Value(bool),
-    on_end_point: *atomic.Value(bool),
-    error_signal: *atomic.Value(bool),
-    all_done: *const atomic.Value(bool),
-    all_on_same_step: *const atomic.Value(bool),
-    force_exit: *const atomic.Value(bool),
-) void {
-    var key = from;
-    while (true) {
-        std.debug.print("Thread {d}: On step? {d}, done? {any}, on end? {any}\n", .{
-            id,
-            nmap.visit_count,
-            done.load(.monotonic),
-            on_end_point.load(.monotonic),
-        });
-        time.sleep(500 * time.ns_per_ms); // slow down for debug
-        // std.debug.print("thread: addr local done: {*}\n", .{all_done});
-        key = nmap.visit(key) catch {
-            error_signal.store(true, .monotonic);
-            return;
-        };
+test "part 2 example but more threads" {
+    std.debug.print("\n", .{});
+    const input =
+        \\LR
+        \\
+        \\11A = (11B, XXX)
+        \\11B = (XXX, 11Z)
+        \\11Z = (11B, XXX)
+        \\22A = (22B, XXX)
+        \\22B = (22C, 22C)
+        \\22C = (22Z, 22Z)
+        \\22Z = (22B, 22B)
+        \\XXX = (XXX, XXX)
+        \\33A = (33B, XXX)
+        \\33B = (33C, 33C)
+        \\33C = (33Z, 33Z)
+        \\33Z = (33B, 33B)
+        \\44A = (44B, XXX)
+        \\44B = (44C, 44C)
+        \\44C = (44Z, 44Z)
+        \\44Z = (44B, 44B)
+        \\55A = (55B, XXX)
+        \\55B = (55C, 55C)
+        \\55C = (55Z, 55Z)
+        \\55Z = (55B, 55B)
+        \\66A = (66B, XXX)
+        \\66B = (66C, 66C)
+        \\66C = (66Z, 66Z)
+        \\66Z = (66B, 66B)
+    ;
 
-        // signal thread is done with step
-        if (key[2] == to_char) {
-            on_end_point.store(true, .monotonic);
-        } else {
-            on_end_point.store(false, .monotonic);
-        }
-        done.store(true, .monotonic);
-
-        // Wait for others to finish with step
-        while (!all_done.load(.monotonic)) {
-            std.debug.print("Thread {d}: waiting at step {d}\n", .{ id, nmap.visit_count });
-            time.sleep(500 * time.ns_per_ms); //NOTE: adjust for performance
-            if (force_exit.load(.monotonic)) return;
-        }
-
-        // At this point we are done, are all on their end points?
-        // return condition
-        if (all_on_same_step.load(.monotonic)) {
-            return;
-        }
-    }
+    try testing.expectEqual(6, try part2(input));
 }
