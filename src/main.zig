@@ -220,4 +220,27 @@ pub fn main() !void {
 
         try stdout.print("\n", .{});
     }
+
+    // day 10
+    if (config.day == 10 or config.day == 0) {
+        const day10 = @import("day10.zig");
+
+        const mat_width = 140; // checked manually
+        //
+        const day10_input_file = try fs.cwd().openFile("src/inputs/day10.txt", .{});
+        defer day10_input_file.close();
+
+        const day10_input = try day10_input_file.readToEndAlloc(allocator, comptime 1024 * 1024);
+        defer allocator.free(day10_input);
+
+        // part 1
+        const day10_part1_answer = try day10.part1(day10_input, mat_width, mat_width);
+        try stdout.print("Day10 Part1:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day10_part1_answer });
+
+        // part 2
+        // const day10_part2_answer = try day10.part2(day10_input, line_len, vec_len);
+        // try stdout.print("Day10 Part2:{c:<" ++ GlobalConfig.fmt_answer_spacing ++ "}{d}\n", .{ ' ', day10_part2_answer });
+
+        try stdout.print("\n", .{});
+    }
 }
